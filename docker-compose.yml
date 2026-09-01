@@ -1,4 +1,4 @@
-version: '3.8'
+name: employment-planning-agent
 
 services:
   db:
@@ -47,6 +47,8 @@ services:
       - "8000:8000"
     volumes:
       - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./data:/app/data
       - ./logs:/app/logs
     env_file:
       - .env.${APP_ENV:-development}

@@ -11,6 +11,7 @@ from sqlmodel import SQLModel
 
 from alembic import context
 from app.core.config import settings
+from app.models.chat_message import ChatMessage  # noqa: F401
 from app.models.session import Session  # noqa: F401
 from app.models.thread import Thread  # noqa: F401
 from app.models.user import User  # noqa: F401
@@ -32,7 +33,7 @@ config.set_main_option("sqlalchemy.url", DATABASE_URL)
 # 将 Alembic 指向 SQLModel metadata，以支持自动生成迁移
 target_metadata = SQLModel.metadata
 
-# 外部系统管理的表（LangGraph checkpointer、mem0、pgvector），Alembic 不应处理
+# 外部系统管理的表（LangGraph checkpointer、mem0 向量集合、RAG 知识库），Alembic 不应处理
 EXCLUDE_TABLES = {
     "checkpoint_blobs",
     "checkpoint_writes",
@@ -40,12 +41,17 @@ EXCLUDE_TABLES = {
     "checkpoints",
     "longterm_memory",
     "mem0migrations",
+    "knowledge_chunks",
+    "knowledge_files",
 }
 
 
 def include_object(object, name, type_, reflected, compare_to):
-    """过滤由外部系统管理的表."""
-    if type_ == "table" and name in EXCLUDE_TABLES:
+    """过滤由外部系统管理的表.
+
+    mem0 向量集合按前缀 longterm_memory* 排除（集合名由配置决定，如 longterm_memory_qwen_1024_v2）。
+    """
+    if type_ == "table" and (name in EXCLUDE_TABLES or name.startswith("longterm_memory")):
         return False
     return True
 

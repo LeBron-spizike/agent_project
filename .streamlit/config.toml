@@ -1,0 +1,7 @@
+# Streamlit 项目级配置
+# 说明：不再写死 browser.serverAddress（局域网 IP 由 DHCP 分配、经常变化）。
+# 不设置该值时，前端会以"浏览器地址栏里的真实地址"作为 websocket 连接目标，
+# 因此无论通过 localhost 还是当前局域网 IP 访问都能正常连接，IP 变了也不用改配置。
+# 局域网访问请使用 start.bat（自动探测当前 IP 并打开浏览器）。
+[browser]
+# serverAddress = "192.168.x.x"

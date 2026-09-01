@@ -108,6 +108,34 @@ class DatabaseService:
             user = session.exec(statement).first()
             return user
 
+    async def get_user_profile(self, user_id: int) -> Optional[dict]:
+        """获取用户求职画像（未填写时返回 None）."""
+        user = await self.get_user(user_id)
+        return user.profile if user else None
+
+    async def update_user_profile(self, user_id: int, profile: dict) -> User:
+        """更新用户求职画像并返回更新后的用户.
+
+        参数：
+            user_id: 用户 ID。
+            profile: 求职画像字典（UserProfile.model_dump()）。
+
+        返回：
+            User: 更新后的用户。
+
+        抛出：
+            HTTPException: 用户不存在时抛出 404。
+        """
+        with Session(self.engine) as session:
+            user = session.get(User, user_id)
+            if user is None:
+                raise HTTPException(status_code=404, detail="User not found")
+            user.profile = profile
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+            return user
+
     async def delete_user_by_email(self, email: str) -> bool:
         """根据邮箱删除用户.
 
@@ -195,20 +223,26 @@ class DatabaseService:
             return chat_session
 
     async def get_user_sessions(self, user_id: int) -> List[ChatSession]:
-        """获取指定用户的所有会话.
-
-        参数：
-            user_id: 用户 ID。
-
-        返回：
-            List[ChatSession]: 用户的会话列表。
-        """
+        """获取指定用户的所有会话，并为旧会话提供首条提问作为标题回退."""
         with Session(self.engine) as session:
             statement = (
                 select(ChatSession).where(col(ChatSession.user_id) == user_id).order_by(col(ChatSession.created_at))
             )
-            sessions = session.exec(statement).all()
-            return list(sessions)
+            sessions = list(session.exec(statement).all())
+
+            # 旧版本创建的会话没有 name；不修改数据库，只在响应前补上可读的即时标题。
+            unnamed_sessions = [chat_session for chat_session in sessions if not chat_session.name]
+            for chat_session in unnamed_sessions:
+                first_message = session.exec(
+                    select(ChatMessage.question)
+                    .where(col(ChatMessage.session_id) == chat_session.id)
+                    .order_by(col(ChatMessage.created_at), col(ChatMessage.id))
+                    .limit(1)
+                ).first()
+                if first_message:
+                    chat_session.name = " ".join(first_message.split())[:24].rstrip() or "新聊天"
+
+            return sessions
 
     async def update_session_name(self, session_id: str, name: str) -> ChatSession:
         """更新会话名称.

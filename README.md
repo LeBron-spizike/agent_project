@@ -1,17 +1,18 @@
-# fastapi-langgraph-agent-zh
+# 就业规划智能问答系统（Employment_Planning_Agent）
 
-> 基于 [fastapi-langgraph-agent-production-ready-template](https://github.com/wassim249/fastapi-langgraph-agent-production-ready-template) 的中文适配版本，面向国内开发者的生产级 **LangGraph + FastAPI 智能体框架**。
+> 面向求职者的**就业规划智能问答系统**：提供职业定位、行业与岗位分析、求职策略、简历与面试辅导、成长路径规划等专业问答服务。基于 LLM Agent 能力构建（后端技术栈：FastAPI + LangGraph，详见下文技术栈）。
 
 ---
 
 ## 项目简介
 
-开箱即用的 **LangGraph + FastAPI 生产级 AI Agent 模板**，对接阿里云 DashScope（Qwen 系列模型），国内网络可直接使用。
+一个产品化的**就业规划智能问答系统**，对接阿里云 DashScope（Qwen 系列模型），国内网络可直接使用。用户注册登录后即可开始对话，Agent 会结合用户背景与长期记忆给出个性化职业建议。
 
 - 完整的本地链路调试验证（PostgreSQL + pgvector + mem0 + qwen-embedding）
 - 认证流程简化：登录获取 token 后全程通用
 - 结构化中文日志、Prometheus/Grafana 监控、Langfuse 追踪
-- 内置两个前端：Streamlit 应用 + 单页静态网页
+- 内置前端：Streamlit 应用（ChatGPT 风格，唯一维护的前端）
+- 后续规划：接入 RAG 职业知识库，提供带引用的行业数据与岗位信息问答
 
 > 📖 完整的项目内容介绍（架构、目录详解、命令参考、注意事项、FAQ）见 [docs/project-overview.md](docs/project-overview.md)。
 
@@ -27,12 +28,12 @@
 | 长期记忆 | mem0 + pgvector + qwen-embedding |
 | 业务数据 + Checkpoint 持久化 | PostgreSQL + SQLModel + AsyncPostgresSaver |
 | 用户鉴权 | JWT（注册/登录 token 全程通用） |
-| Agent 工具 | 计算器、联网搜索（DuckDuckGo）、人类介入、MCP（高德地图可选） |
+| Agent 工具 | 计算器、联网搜索（DuckDuckGo）、人类介入、MCP（百度地图：地理编码/周边检索/路线/天气） |
 | 结构化日志 | structlog（本地彩色 / 容器纯文本自动切换） |
 | 指标监控 | Prometheus + Grafana |
 | LLM 链路追踪 | Langfuse |
 | 限流 | slowapi（按用户 ID，独立配额） |
-| 前端 | Streamlit 聊天应用 + 单页静态网页 |
+| 前端 | Streamlit 聊天应用（唯一维护的前端） |
 
 ---
 
@@ -83,7 +84,7 @@ curl http://127.0.0.1:8000/health
 {"status":"healthy","version":"1.0.0","environment":"development","components":{"api":"healthy","database":"healthy"}}
 ```
 
-> ⚠️ 容器里 `docker compose ps` 若显示 app `unhealthy`，是容器内未装 curl 导致健康检查误报，实际 `/health` 正常，可忽略（详见注意事项）。
+> 镜像已内置 curl，`/health` 健康检查正常；若 `docker compose ps` 仍显示 unhealthy 以 `/health` 实际返回为准。
 
 **常用运维命令：**
 
@@ -132,17 +133,9 @@ streamlit run frontend_streamlit/app.py
 C:\Users\Administrator\.conda\envs\ai_agent\python.exe -m streamlit run frontend_streamlit/app.py
 ```
 
-浏览器打开 **http://localhost:8501**。支持：后端健康状态、注册、登录、创建会话、会话列表、历史消息、多会话切换、对话。
+浏览器打开 **http://localhost:8501**。支持：后端健康状态、注册、登录、创建会话、会话列表、历史消息、多会话切换、对话、求职画像、知识库管理、模式切换。
 
-### 前端 2：单页静态网页
-
-```bash
-python -m http.server 3000 --directory frontend
-```
-
-浏览器打开 **http://localhost:3000/index.html**。
-
-> ⚠️ 不要直接双击 `index.html`（`file://` 打开）——浏览器会因 CORS 拦截请求。必须从 localhost 端口提供（如上命令），后端 `ALLOWED_ORIGINS` 已放行 `http://localhost:3000`。
+> ℹ️ **前端统一为 Streamlit**：原模板遗留的静态页 `frontend/index.html` 已删除，不再提供。
 
 ---
 
@@ -173,7 +166,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/login \
   --data-urlencode "grant_type=password"
 ```
 
-> ⚠️ **表单字段是 `email=`**（不是 `username=`）。后端 [auth.py](app/api/v1/auth.py) 要求 `email` 字段，旧文档里写的 `username=` 已过时，按此写法会报 `email: Field required`。两个前端内部均使用 `email=`，网页操作不受影响。
+> ⚠️ **表单字段是 `email=`**（不是 `username=`）。后端 [auth.py](app/api/v1/auth.py) 要求 `email` 字段，旧文档里写的 `username=` 已过时，按此写法会报 `email: Field required`。前端内部均使用 `email=`，网页操作不受影响。
 
 登录成功返回 `access_token`（30 天有效），保存后用于下面的鉴权。
 
@@ -186,7 +179,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/auth/session \
 
 返回 `session_id`，后续聊天都基于该会话。
 
-### 4. 聊天（走 LangGraph Agent + Qwen）
+### 4. 聊天（就业规划问答）
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/chatbot/chat \
@@ -253,8 +246,8 @@ make eval-quick       # 运行 LLM 评测（默认配置）
 2. **前端 CORS**：静态页必须从 localhost 打开，不能 `file://`；Streamlit 走服务端不受 CORS 限制。
 3. **密码强度**：注册密码需含特殊字符，否则 422。
 4. **聊天依赖网络**：对话出结果依赖 `.env.development` 里的 `DASHSCOPE_API_KEY` 有效（阿里云百炼），Key 失效会报错。
-5. **密钥安全**：`.env.development` 含真实密钥，已被 `.gitignore` 忽略不会入库；但**打包/分享项目目录时务必脱敏**。本项目当前 `.git` 目录为空（无版本控制），建议 `git init` 建初始提交做保险。
-6. **app 显示 unhealthy**：容器内缺 curl 导致健康检查误报，`/health` 实际正常，可忽略。
+5. **密钥安全**：`.env.development` 含真实密钥，已被 `.gitignore` 忽略不会入库；项目已纳入 git 版本控制，提交前确认 `.env.*` 等含密钥文件未被跟踪，分享/打包项目目录时务必脱敏。
+6. **app 显示 unhealthy**：多为启动初期瞬时状态，`/health` 返回 healthy 即正常；镜像已内置 curl（历史"缺 curl 误报"已修复）。
 7. **多 Python 环境**：本机存在多个 Python（conda base / ai_agent / Python3.12…），裸命令可能指向错误的解释器；命令行工具报「command not found」时改用 `python -m <tool>` 或写全路径。
 8. **限流**：`POST /chatbot/chat` 30 次/分钟、登录 20 次/分钟等；触发返回 429 中文提示。
 
@@ -264,6 +257,7 @@ make eval-quick       # 运行 LLM 评测（默认配置）
 
 | 文档 | 说明 |
 |---|---|
+| [docs/from-template.md](docs/from-template.md) | **从原模板复现 + Agent 系统架构 + 相对模板新增功能** |
 | [docs/project-overview.md](docs/project-overview.md) | **项目总览**：架构、目录详解、命令参考、FAQ |
 | [docs/getting-started.md](docs/getting-started.md) | 快速开始 |
 | [docs/architecture.md](docs/architecture.md) | 架构与请求链路 |
@@ -283,7 +277,6 @@ make eval-quick       # 运行 LLM 评测（默认配置）
 ```
 app/                 # 后端源码（api / core / models / schemas / services / utils）
 alembic/             # 数据库迁移
-frontend/            # 静态网页前端（index.html）
 frontend_streamlit/  # Streamlit 前端（app.py）
 evals/               # LLM 评测框架
 docs/                # 文档
@@ -297,3 +290,5 @@ tests/               # 测试
 ## 致谢
 
 本项目基于 [wassim249/fastapi-langgraph-agent-production-ready-template](https://github.com/wassim249/fastapi-langgraph-agent-production-ready-template) 二次开发，感谢原作者开源贡献。
+
+> 从原模板一步步复现本项目的步骤、Agent 系统架构，以及相对模板新增的全部功能，见 [docs/from-template.md](docs/from-template.md)。

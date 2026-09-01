@@ -21,6 +21,7 @@ RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debia
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
+    curl \
     && pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/ \
     && pip install uv -i https://mirrors.aliyun.com/pypi/simple/ \
     && rm -rf /var/lib/apt/lists/*

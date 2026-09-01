@@ -112,10 +112,12 @@ class SessionResponse(BaseResponse):
     Attributes:
         session_id: 聊天会话唯一标识。
         name: Name of the session (defaults to empty string)
+        created_at: 会话创建时间（用于前端按时间分组展示）。
     """
 
     session_id: str = Field(..., description="聊天会话唯一标识")
     name: str = Field(default="", description="会话名称", max_length=100)
+    created_at: datetime = Field(..., description="会话创建时间")
 
     @field_validator("name")
     @classmethod

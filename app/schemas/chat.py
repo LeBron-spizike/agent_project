@@ -26,7 +26,8 @@ class Message(BaseModel):
     model_config = {"extra": "ignore"}
 
     role: Literal["user", "assistant", "system"] = Field(..., description="消息发送方角色")
-    content: str = Field(..., description="消息内容", min_length=1, max_length=3000)
+    # 20000：文件分析会把提取的文件文本（上限 ANALYZE_MAX_CHARS）拼进消息，且分析类回答可能较长
+    content: str = Field(..., description="消息内容", min_length=1, max_length=20000)
 
     @field_validator("content")
     @classmethod
@@ -59,6 +60,7 @@ class ChatRequest(BaseModel):
     Attributes:
         session_id: Chat session ID owned by the authenticated user.
         messages: 会话中的消息列表。
+        mode: 人设模式（career=职业顾问 / resume=简历评审 / interview=面试官）。
     """
 
     session_id: str = Field(..., description="聊天会话 ID")
@@ -67,6 +69,10 @@ class ChatRequest(BaseModel):
         description="会话中的消息列表",
         min_length=1,
     )
+    mode: Literal["career", "resume", "interview"] = Field(
+        default="career",
+        description="人设模式：career=职业顾问（默认）/ resume=简历评审 / interview=面试官",
+    )
 
 
 class ChatResponse(BaseResponse):
@@ -74,9 +80,14 @@ class ChatResponse(BaseResponse):
 
     Attributes:
         messages: 会话中的消息列表。
+        knowledge_sources: 本轮回答命中的 RAG 知识库来源文件名（未命中时为空列表）。
     """
 
     messages: List[Message] = Field(..., description="会话中的消息列表")
+    knowledge_sources: List[str] = Field(
+        default_factory=list,
+        description="本轮回答命中的知识库来源文件名，用于前端展示 RAG 引用来源",
+    )
 
 
 class StreamResponse(BaseResponse):
@@ -85,10 +96,16 @@ class StreamResponse(BaseResponse):
     Attributes:
         content: 当前分片内容。
         done: Whether the stream is complete.
+        knowledge_sources: 本轮回答命中的 RAG 知识库来源文件名（随结束事件返回，
+            供前端展示"知识库来源"徽章）。
     """
 
     content: str = Field(default="", description="当前分片内容")
     done: bool = Field(default=False, description="流式响应是否完成")
+    knowledge_sources: List[str] = Field(
+        default_factory=list,
+        description="本轮回答命中的知识库来源文件名，随流式结束事件返回",
+    )
 
 
 class SessionTitle(BaseModel):

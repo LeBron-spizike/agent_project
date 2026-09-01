@@ -1,5 +1,12 @@
 # AI Agent Development Guide
 
+## 项目定位（Project）
+
+- 产品名：**就业规划智能问答系统**（英文标识：`Employment_Planning_Agent`）
+- 面向求职者的就业规划问答服务：职业定位、行业/岗位分析、求职策略、简历与面试辅导、成长路径规划
+- 后端技术栈（仅文档体现）：FastAPI · LangGraph · LangChain · PostgreSQL + pgvector · mem0 · Langfuse 等
+- 进度文档：每次对话**先读 `docs/PROGRESS.md`** 同步当前进度与路线图
+
 This document provides essential guidelines for AI agents working on this LangGraph FastAPI Agent project.
 
 ## Quick Commands  说明：快速命令，使用的是Makefile中的命令。Makefile将常用命令包装成简单命令，方便使用。

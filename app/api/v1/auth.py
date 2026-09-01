@@ -215,7 +215,11 @@ async def create_session(user: User = Depends(get_current_user)):
             name=session.name,
         )
 
-        return SessionResponse(session_id=session_id, name=session.name)
+        return SessionResponse(
+            session_id=session_id,
+            name=session.name,
+            created_at=session.created_at,
+        )
     except ValueError as ve:
         logger.exception("session_creation_validation_failed", error=str(ve), user_id=user.id)
         raise HTTPException(status_code=422, detail=str(ve))
@@ -244,7 +248,11 @@ async def update_session_name(session_id: str, name: str = Form(...), user: User
         # 更新会话名称
         session = await db_service.update_session_name(sanitized_session_id, sanitized_name)
 
-        return SessionResponse(session_id=sanitized_session_id, name=session.name)
+        return SessionResponse(
+            session_id=sanitized_session_id,
+            name=session.name,
+            created_at=session.created_at,
+        )
     except ValueError as ve:
         logger.exception("session_update_validation_failed", error=str(ve), session_id=session_id)
         raise HTTPException(status_code=422, detail=str(ve))
@@ -293,6 +301,7 @@ async def get_user_sessions(user: User = Depends(get_current_user)):
             SessionResponse(
                 session_id=sanitize_string(session.id),
                 name=sanitize_string(session.name),
+                created_at=session.created_at,
             )
             for session in sessions
         ]

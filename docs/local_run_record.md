@@ -1,8 +1,8 @@
-# fastapi-langgraph-agent-zh 本地运行记录
+# 就业规划智能问答系统（Employment_Planning_Agent）本地运行记录
 
 ## 1. 项目说明
 
-本项目是一个基于 **FastAPI + LangGraph + PostgreSQL + pgvector + DashScope/Qwen** 的 Agent 后端项目。
+本项目是**就业规划智能问答系统**（后端技术栈：FastAPI + LangGraph + PostgreSQL + pgvector + DashScope/Qwen）的 Agent 后端项目。
 
 本地已经完成以下验证：
 
@@ -24,7 +24,7 @@
 ### 2.1 进入项目目录
 
 ```cmd
-cd /d D:\fastapi-langgraph-agent-zh-master
+cd /d D:\employment-planning-agent
 ```
 
 ### 2.2 设置环境变量
@@ -112,12 +112,12 @@ docker compose --env-file .env.development down
 
 ```env
 APP_ENV=development
-PROJECT_NAME="Web Assistant"
+PROJECT_NAME="就业规划智能问答系统"
 VERSION=1.0.0
 DEBUG=true
 
 API_V1_STR=/api/v1
-ALLOWED_ORIGINS="http://localhost:3000,http://localhost:8000"
+ALLOWED_ORIGINS="http://localhost:8000"
 
 LANGFUSE_TRACING_ENABLED=false
 LANGFUSE_PUBLIC_KEY=""
@@ -130,8 +130,8 @@ DEFAULT_LLM_MODEL=qwen-plus
 DEFAULT_LLM_TEMPERATURE=0.2
 SESSION_NAMING_ENABLED=false
 
-AMAP_API_KEY=""
-AMAP_MCP_ENABLED=false
+BAIDU_MAP_MCP_ENABLED=true
+BAIDU_MAP_AK="你的百度地图 AK"
 
 LONG_TERM_MEMORY_MODEL=qwen-plus
 LONG_TERM_MEMORY_EMBEDDER_MODEL=text-embedding-v4

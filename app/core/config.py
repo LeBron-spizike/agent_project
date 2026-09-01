@@ -123,10 +123,10 @@ class Settings:
         self.ENVIRONMENT = get_environment()
 
         # 应用配置
-        self.PROJECT_NAME = os.getenv("PROJECT_NAME", "FastAPI LangGraph Template")
+        self.PROJECT_NAME = os.getenv("PROJECT_NAME", "就业规划智能问答系统")
         self.VERSION = os.getenv("VERSION", "1.0.0")
         self.DESCRIPTION = os.getenv(
-            "DESCRIPTION", "A production-ready FastAPI template with LangGraph and Langfuse integration"
+            "DESCRIPTION", "就业规划智能问答系统：基于 LLM Agent 提供职业定位、行业/岗位分析、求职策略与成长路径规划"
         )
         self.API_V1_STR = os.getenv("API_V1_STR", "/api/v1")
         self.DEBUG = os.getenv("DEBUG", "false").lower() in ("true", "1", "t", "yes")
@@ -150,10 +150,10 @@ class Settings:
         self.DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
 
         # MCP 工具配置
-        # 高德地图 MCP：https://lbs.amap.com/api/mcp-server/summary
-        # 申请地址：https://lbs.amap.com/dev/key/app
-        self.AMAP_API_KEY = os.getenv("AMAP_API_KEY", "")
-        self.AMAP_MCP_ENABLED = os.getenv("AMAP_MCP_ENABLED", "true").lower() in ("true", "1", "yes")
+        # 百度地图 MCP：自建 FastMCP Server 包装百度地图 REST API（stdio 传输，无需额外运行时）
+        # AK 未配置时自动跳过该工具集，不影响 Agent 启动
+        self.BAIDU_MAP_MCP_ENABLED = os.getenv("BAIDU_MAP_MCP_ENABLED", "true").lower() in ("true", "1", "yes")
+        self.BAIDU_MAP_AK = os.getenv("BAIDU_MAP_AK", "")
         self.DASHSCOPE_BASE_URL = os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
         self.DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gpt-5-mini")
         self.SESSION_NAMING_ENABLED = os.getenv("SESSION_NAMING_ENABLED", "true").lower() == "true"
@@ -170,6 +170,34 @@ class Settings:
         self.LONG_TERM_MEMORY_EMBEDDER_MODEL = os.getenv("LONG_TERM_MEMORY_EMBEDDER_MODEL", "text-embedding-v4")
         self.LONG_TERM_MEMORY_EMBEDDING_DIMS = int(os.getenv("LONG_TERM_MEMORY_EMBEDDING_DIMS", "1024"))
         self.LONG_TERM_MEMORY_COLLECTION_NAME = os.getenv("LONG_TERM_MEMORY_COLLECTION_NAME", "longterm_memory")
+
+        # RAG 知识库配置
+        self.RAG_ENABLED = os.getenv("RAG_ENABLED", "true").lower() in ("true", "1", "t", "yes")
+        # inject：每轮检索并注入 system prompt 的 {knowledge} 占位符；tool：注册 knowledge_search 工具由 Agent 按需调用；off：关闭
+        self.RAG_MODE = os.getenv("RAG_MODE", "inject").lower()
+        self.RAG_KNOWLEDGE_DIR = os.getenv("RAG_KNOWLEDGE_DIR", "data/knowledge")
+        self.RAG_EMBEDDING_MODEL = os.getenv("RAG_EMBEDDING_MODEL", "text-embedding-v4")
+        self.RAG_EMBEDDING_DIMS = int(os.getenv("RAG_EMBEDDING_DIMS", "1024"))
+        self.RAG_CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "500"))
+        self.RAG_CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "80"))
+        self.RAG_TOP_K = int(os.getenv("RAG_TOP_K", "4"))
+        # 检索相似度得分阈值（0-1，余弦相似度）；0 表示不过滤
+        self.RAG_SCORE_THRESHOLD = float(os.getenv("RAG_SCORE_THRESHOLD", "0.0"))
+        # 启动时自动增量摄取知识目录（MD5 相同的文件自动跳过，代价很低）
+        self.RAG_AUTO_INGEST = os.getenv("RAG_AUTO_INGEST", "true").lower() in ("true", "1", "t", "yes")
+        self.RAG_INGEST_BATCH_SIZE = int(os.getenv("RAG_INGEST_BATCH_SIZE", "16"))
+
+        # RAG 二阶段精排（rerank）：先用向量召回更大候选窗口，再用 DashScope gte-rerank 精排到 RAG_TOP_K
+        # 未开通 gte-rerank 额度时接口会失败，search() 内部降级为纯向量结果，不影响对话
+        self.RAG_RERANK_ENABLED = os.getenv("RAG_RERANK_ENABLED", "true").lower() in ("true", "1", "t", "yes")
+        self.RAG_RERANK_MODEL = os.getenv("RAG_RERANK_MODEL", "gte-rerank-v2")
+        self.RAG_RERANK_CANDIDATES = int(os.getenv("RAG_RERANK_CANDIDATES", "20"))
+        self.RAG_RERANK_TOP_K = int(os.getenv("RAG_RERANK_TOP_K", "4"))
+
+        # 对话文件分析配置
+        self.ANALYZE_MAX_FILE_MB = int(os.getenv("ANALYZE_MAX_FILE_MB", "10"))
+        # 提取文本超出该长度时截断，避免超出模型上下文并控制响应耗时
+        self.ANALYZE_MAX_CHARS = int(os.getenv("ANALYZE_MAX_CHARS", "6000"))
         # JWT 配置
         self.JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
         self.JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
@@ -214,6 +242,9 @@ class Settings:
             "login": ["20 per minute"],
             "root": ["10 per minute"],
             "health": ["20 per minute"],
+            "knowledge": ["20 per minute"],
+            "analyze": ["10 per minute"],
+            "profile": ["20 per minute"],
         }
 
         # 使用环境变量更新接口限流配置

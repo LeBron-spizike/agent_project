@@ -1,91 +1,42 @@
-"""MCP 客户端测试.
+"""MCP 客户端配置测试（百度地图 MCP）.
 
 运行方式：
-    # 安装测试依赖
-    uv sync --group test
-
-    # 运行所有测试
     uv run pytest tests/test_mcp_client.py -v
-
-    # 只运行快速测试（跳过需要真实网络的测试）
-    uv run pytest tests/test_mcp_client.py -v -m "not slow"
 """
 
-import asyncio
+import sys
 
 import pytest
 
 from app.core.config import settings
-from app.core.langgraph.tools.mcp_client import MCPClient
+from app.core.langgraph.tools.baidu_mcp import get_baidu_mcp_servers
 
-# Key 从环境变量读取，在 .env 中配置 AMAP_API_KEY，不要硬编码
-AMAP_MCP_URL = f"https://mcp.amap.com/mcp?key={settings.AMAP_API_KEY}"
-
-skip_if_no_amap_key = pytest.mark.skipif(
-    not settings.AMAP_API_KEY,
-    reason="AMAP_API_KEY 未配置，跳过高德 MCP 测试（在 .env 中设置 AMAP_API_KEY）",
+skip_if_no_ak = pytest.mark.skipif(
+    not settings.BAIDU_MAP_AK,
+    reason="BAIDU_MAP_AK 未配置，跳过百度地图 MCP 测试（在 .env 中设置 BAIDU_MAP_AK）",
 )
 
 
-class TestMCPClientListTools:
-    """测试 list_tools：验证能否连接并获取工具列表."""
+class TestBaiduMcpConfig:
+    """测试 get_baidu_mcp_servers 返回的 MCP Server 配置结构."""
 
-    @pytest.mark.slow
-    @skip_if_no_amap_key
-    def test_list_tools_returns_tools(self) -> None:
-        """连接高德 MCP Server，应返回非空工具列表."""
-        client = MCPClient(AMAP_MCP_URL)
-        tools = asyncio.run(client.list_tools())
+    @skip_if_no_ak
+    def test_returns_stdio_config(self) -> None:
+        """AK 就绪时，应返回百度地图 MCP 的 stdio 配置."""
+        servers = get_baidu_mcp_servers()
+        assert "baidu_maps" in servers, "配置应包含 baidu_maps 键"
 
-        assert len(tools) > 0, "工具列表不应为空"
+        config = servers["baidu_maps"]
+        assert config["transport"] == "stdio"
+        assert config["command"] == sys.executable
+        assert config["args"][-1].endswith("baidu_maps_server"), f"入口应为自建 server: {config['args']}"
 
-    @pytest.mark.slow
-    @skip_if_no_amap_key
-    def test_list_tools_have_required_fields(self) -> None:
-        """每个工具应包含 name 和 description 字段."""
-        client = MCPClient(AMAP_MCP_URL)
-        tools = asyncio.run(client.list_tools())
+    def test_disabled_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """BAIDU_MAP_MCP_ENABLED=false 时应返回空字典."""
+        monkeypatch.setattr(settings, "BAIDU_MAP_MCP_ENABLED", False)
+        assert get_baidu_mcp_servers() == {}
 
-        for tool in tools:
-            assert tool.name, f"工具缺少 name 字段: {tool}"
-            assert tool.description, f"工具 {tool.name} 缺少 description 字段"
-
-    @pytest.mark.slow
-    @skip_if_no_amap_key
-    def test_print_all_tools(self) -> None:
-        """打印所有工具名和描述，方便了解 MCP Server 提供了什么能力."""
-        client = MCPClient(AMAP_MCP_URL)
-        tools = asyncio.run(client.list_tools())
-
-        print(f"\n共 {len(tools)} 个工具：")
-        for tool in tools:
-            print(f"  - {tool.name}: {tool.description}")
-            print(f"    参数: {tool.inputSchema}")
-
-
-class TestMCPClientCallTool:
-    """测试 call_tool：验证工具调用是否正常."""
-
-    @pytest.mark.slow
-    @skip_if_no_amap_key
-    def test_call_tool_returns_string(self) -> None:
-        """调用工具应返回字符串结果."""
-        client = MCPClient(AMAP_MCP_URL)
-
-        # 先获取工具列表，取第一个工具名
-        tools = asyncio.run(client.list_tools())
-        assert tools, "没有可用工具"
-
-        first_tool = tools[0]
-        print(f"\n测试工具: {first_tool.name}")
-
-        # 注意：这里的参数需要根据实际工具调整
-        # 先运行 test_print_all_tools 看工具参数格式
-        result = asyncio.run(
-            client.call_tool(
-                tool_name=first_tool.name,
-                arguments={},  # 根据 inputSchema 填写
-            )
-        )
-        assert isinstance(result, str), "结果应为字符串"
-        print(f"结果: {result[:200]}")  # 只打印前 200 字符
+    def test_no_ak_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """AK 未配置时应返回空字典（降级路径）."""
+        monkeypatch.setattr(settings, "BAIDU_MAP_AK", "")
+        assert get_baidu_mcp_servers() == {}

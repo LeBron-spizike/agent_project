@@ -39,7 +39,7 @@ jobs:
       - name: Push Image
         if: ${{ secrets.DOCKER_USERNAME != '' }}
         run: |
-          docker tag fastapi-langgraph-template:production ${{ secrets.DOCKER_USERNAME }}/${{ env.REPO_NAME }}:production
+          docker tag employment-planning-agent:production ${{ secrets.DOCKER_USERNAME }}/${{ env.REPO_NAME }}:production
           docker push ${{ secrets.DOCKER_USERNAME }}/${{ env.REPO_NAME }}:production
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}

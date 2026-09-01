@@ -29,6 +29,7 @@ from app.core.middleware import (
     ProfilingMiddleware,
 )
 from app.core.observability import langfuse_init
+from app.rag.rag_service import rag_service
 from app.services.database import database_service
 from app.services.memory import memory_service
 
@@ -66,6 +67,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.exception("memory_service_pre_warm_failed", error=str(e))
 
+    # 初始化 RAG 知识库：确保 pgvector 表/索引存在，并按配置执行增量摄取（MD5 去重，已摄取文件自动跳过）
+    if settings.RAG_ENABLED:
+        try:
+            await rag_service.initialize()
+            if settings.RAG_AUTO_INGEST:
+                report = await rag_service.ingest_directory()
+                logger.info(
+                    "knowledge_auto_ingest_completed",
+                    total_files=report.total_files,
+                    ingested=len(report.ingested_files),
+                    skipped=len(report.skipped_files),
+                    failed=len(report.failed_files),
+                    total_chunks=report.total_chunks,
+                )
+        except Exception as e:
+            # 知识库初始化失败不阻断应用启动，聊天时检索会降级返回空上下文
+            logger.exception("rag_service_init_failed", error=str(e))
+
     yield
 
     # 应用关闭时清理资源
@@ -74,15 +93,6 @@ async def lifespan(app: FastAPI):
         await agent._connection_pool.close()
         logger.info("connection_pool_closed")
     logger.info("application_shutdown")
-
-
-"""
-    项目说明：
-    这个项目是一个生产化 AI Agent 后端模板。API 层使用 FastAPI，Agent 工作流使用 LangGraph，LLM 和工具调用抽象使用 LangChain。用户、session 等业务数据使用 PostgreSQL/SQLModel 存储。
-短期会话状态由 LangGraph checkpoint 管理，底层通过 AsyncPostgresSaver 存入 PostgreSQL。长期记忆由 mem0 管理，mem0 负责从对话中抽取、更新和检索长期记忆，底层使用 PostgreSQL + pgvector 保存 memory 文本、metadata 和 embedding 向量。
-配置通过 .env / 环境变量管理，真实 .env 不应提交，.env.example 作为模板。部署层目前提供 Dockerfile 和 docker-compose，可启动 API、PostgreSQL、Valkey、Prometheus、Grafana 等服务；生产可以扩展到 K8s。观测层包括 structlog 日志、Prometheus/Grafana 指标监控，以及 Langfuse 的 LLM 调用追踪。
-
-"""
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

@@ -1,10 +1,10 @@
-"""测试 LLM 通过 MCP 工具自动调用高德地图.
+"""测试 LLM 通过 MCP 工具自动调用百度地图服务.
 
 流程：
-    1. 从高德 MCP Server 获取工具列表（使用 LangChain MCP 适配器）
+    1. 从自建百度地图 MCP Server 获取工具列表（使用 LangChain MCP 适配器，stdio 传输）
     2. 将工具绑定给 LLM
-    3. 向 LLM 提问，LLM 自动决定调用哪个工具
-    4. 循环执行工具，直到 LLM 给出最终文字回答（支持多轮 ReAct）
+    3. 向 LLM 提问，LLM 自动决定调用哪个工具（支持多轮 ReAct）
+    4. 循环执行工具，直到 LLM 给出最终文字回答
 
 运行：
     uv run pytest tests/test_mcp_with_llm.py -v -s -m slow
@@ -19,17 +19,17 @@ from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 from app.core.config import settings
-from app.core.langgraph.tools.amap_mcp import get_amap_mcp_servers
+from app.core.langgraph.tools.baidu_mcp import get_baidu_mcp_servers
 from app.core.langgraph.tools.mcp_client import get_langchain_mcp_tools
 
-# Key 从环境变量读取（AMAP_API_KEY），在 .env 中配置，不要硬编码
-AMAP_SERVERS = get_amap_mcp_servers()
+# AK 从环境变量读取（BAIDU_MAP_AK），未配置时测试自动跳过
+BAIDU_SERVERS = get_baidu_mcp_servers()
 
 
 async def run_llm_with_mcp_tools(question: str) -> str:
-    """让 LLM 使用 MCP 工具回答问题.
+    """让 LLM 使用百度地图 MCP 工具回答问题.
 
-    支持多轮工具调用：LLM 可能先查坐标，再用坐标查路线，直到给出最终文字回答为止。
+    支持多轮工具调用：LLM 可能先地理编码，再路线规划 / 周边检索，直到给出最终文字回答为止。
 
     参数：
         question: 用户问题
@@ -38,8 +38,8 @@ async def run_llm_with_mcp_tools(question: str) -> str:
         LLM 最终回答
     """
     # 1. 获取 MCP 工具（LangChain 格式，使用 mcp_client 封装）
-    tools = await get_langchain_mcp_tools(AMAP_SERVERS)
-    tools_by_name = {tool.name: tool for tool in tools}
+    tools = await get_langchain_mcp_tools(BAIDU_SERVERS)
+    tools_by_name: dict[str, Any] = {tool.name: tool for tool in tools}
 
     # 2. 初始化 LLM，绑定工具
     llm = ChatOpenAI(
@@ -78,17 +78,17 @@ async def run_llm_with_mcp_tools(question: str) -> str:
             print(f"  结果：{str(tool_result)[:300]}")
 
 
-skip_if_no_amap_key = pytest.mark.skipif(
-    not AMAP_SERVERS,
-    reason="AMAP_API_KEY 未配置，跳过高德 MCP 测试（在 .env 中设置 AMAP_API_KEY）",
+skip_if_no_ak = pytest.mark.skipif(
+    not BAIDU_SERVERS,
+    reason="BAIDU_MAP_AK 未配置，跳过百度地图 MCP 测试（在 .env 中设置 BAIDU_MAP_AK）",
 )
 
 
 class TestLLMWithMCPTools:
-    """测试 LLM 通过 MCP 工具自动调用."""
+    """测试 LLM 通过百度地图 MCP 工具自动调用."""
 
     @pytest.mark.slow
-    @skip_if_no_amap_key
+    @skip_if_no_ak
     def test_query_weather(self) -> None:
         """LLM 应自动调用天气工具回答天气问题."""
         result = asyncio.run(run_llm_with_mcp_tools("北京今天天气怎么样？"))
@@ -96,17 +96,17 @@ class TestLLMWithMCPTools:
         assert result, "应有回答"
 
     @pytest.mark.slow
-    @skip_if_no_amap_key
+    @skip_if_no_ak
     def test_query_nearby(self) -> None:
-        """LLM 应自动调用周边搜索工具."""
-        result = asyncio.run(run_llm_with_mcp_tools("上海人民广场附近有什么药店？"))
+        """LLM 应自动调用地点检索工具."""
+        result = asyncio.run(run_llm_with_mcp_tools("上海人民广场附近有什么咖啡厅？"))
         print(f"\n最终回答：{result}")
         assert result, "应有回答"
 
     @pytest.mark.slow
-    @skip_if_no_amap_key
+    @skip_if_no_ak
     def test_query_route(self) -> None:
-        """LLM 应自动调用路径规划工具."""
-        result = asyncio.run(run_llm_with_mcp_tools("从北京天安门开车到颐和园怎么走？"))
+        """LLM 应自动调用路线规划工具."""
+        result = asyncio.run(run_llm_with_mcp_tools("从北京天安门到颐和园怎么走？"))
         print(f"\n最终回答：{result}")
         assert result, "应有回答"

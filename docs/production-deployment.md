@@ -8,7 +8,7 @@
 
 ```
 阿里云 ECS（单台服务器）
-├── Docker 容器：fastapi-langgraph-agent-zh（端口 8000）
+├── Docker 容器：employment-planning-agent（端口 8000）
 ├── Docker 容器：Langfuse（LLM 链路追踪，cloud 版本）
 └── 阿里云 RDS PostgreSQL（托管数据库，不在本机）
 ```
@@ -112,8 +112,8 @@ sudo systemctl restart docker
 
 ```bash
 mkdir -p /app/code && cd /app/code
-git clone https://github.com/jarry126/fastapi-langgraph-agent-zh.git
-cd fastapi-langgraph-agent-zh
+git clone https://github.com/LeBron-spizike/Employment_Planning_Agent.git
+cd Employment_Planning_Agent
 ```
 
 ---
@@ -157,7 +157,7 @@ curl http://localhost:8000/health
 代码有更新时：
 
 ```bash
-cd /app/code/fastapi-langgraph-agent-zh
+cd /app/code/Employment_Planning_Agent
 git pull
 
 # 仅代码变更（无新依赖）：重启即可，无需重新构建

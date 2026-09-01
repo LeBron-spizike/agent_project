@@ -1,13 +1,13 @@
 # 项目总览（Project Overview）
 
-> 本文件是 `fastapi-langgraph-agent-zh` 的**完整内容介绍**：项目定位、架构、全部文件职责、功能清单、命令参考、注意事项与 FAQ。
+> 本文件是 `Employment_Planning_Agent`（就业规划智能问答系统）的**完整内容介绍**：项目定位、架构、全部文件职责、功能清单、命令参考、注意事项与 FAQ。
 > 如何复现启动与详细使用，见根目录 [README.md](../README.md)。
 
 ---
 
 ## 1. 项目定位
 
-一个开箱即用的 **LangGraph + FastAPI 生产级 AI Agent 后端模板**，中文适配版。
+一个产品化的 **就业规划智能问答系统**：基于 LLM Agent 技术（后端技术栈 FastAPI + LangGraph）构建，面向求职者提供职业定位、行业与岗位分析、求职策略、简历与面试辅导、成长路径规划等专业问答服务。
 
 在原始模板基础上完成：
 
@@ -17,7 +17,7 @@
 - 认证流程简化：登录获取 token 后所有接口通用（去掉了原版"再换 session token"一步）
 - 日志系统重构：统一 text 格式，本地彩色 / 容器纯文本自动切换
 - 限流改为按用户 ID，独立配额互不干扰
-- 内置两个前端（Streamlit + 静态网页），开箱即用
+- 内置前端：Streamlit 应用（开箱即用，唯一维护的前端）
 
 ---
 
@@ -42,7 +42,7 @@ Langfuse · slowapi · tenacity · Pydantic v2
   - `calculator`：安全四则运算（AST 白名单解析）
   - `duckduckgo_results_json`：联网搜索
   - `ask_human`：人类介入确认
-  - MCP：高德地图（`.env` 里 `AMAP_MCP_ENABLED=false` 默认关闭）
+  - MCP：百度地图（自建 FastMCP Server 包装 REST API，stdio，5 个工具，AK 未配置时自动跳过）
 
 ### 3.2 记忆系统
 - **短期记忆**：LangGraph checkpoint（会话内）
@@ -65,7 +65,7 @@ Langfuse · slowapi · tenacity · Pydantic v2
 ### 3.5 其他
 - 限流压测调试接口（仅开发环境）
 - LLM 评测框架（evals/，5 个评测维度）
-- 两个现成前端
+- 现成前端（Streamlit，唯一维护）
 
 ---
 
@@ -121,7 +121,7 @@ LLM（DashScope Qwen） · PostgreSQL（业务表+checkpoint+向量） · 外部
 | .secrets.baseline | detect-secrets 密钥扫描基线 |
 | .vscode/settings.json | VSCode 项目设置 |
 | .github/workflows/ | GitHub CI/CD（ci.yaml / deploy.yaml） |
-| .claude/ | Claude Code 配置 + daily-report 技能 |
+| .claude/ | Claude Code 配置与技能（frontend-design / webapp-testing） |
 | typings/ | pyright 类型桩目录 |
 | logs/ | 日志目录（Docker 挂载，空） |
 
@@ -144,7 +144,7 @@ LLM（DashScope Qwen） · PostgreSQL（业务表+checkpoint+向量） · 外部
 | **core/prompts/system.md** | Agent 系统提示词 |
 | **core/prompts/session_title.md** | 会话自动命名提示词 |
 | **core/langgraph/graph.py** | LangGraph 状态图、checkpointer、多轮对话、清历史 |
-| **core/langgraph/tools/** | `calculator.py` / `duckduckgo_search.py` / `ask_human.py` / `amap_mcp.py` / `mcp_client.py` |
+| **core/langgraph/tools/** | `calculator.py` / `duckduckgo_search.py` / `ask_human.py` / `baidu_mcp.py` / `mcp_client.py` |
 | **models/base.py** | 公共基类 |
 | **models/user.py** | 用户表 |
 | **models/session.py** | 会话表 |
@@ -163,8 +163,7 @@ LLM（DashScope Qwen） · PostgreSQL（业务表+checkpoint+向量） · 外部
 
 | 路径 | 类型 | 说明 |
 |---|---|---|
-| [frontend/index.html](../frontend/index.html) | 静态网页 | 纯 HTML+JS，登录+对话，需从 localhost 提供 |
-| [frontend_streamlit/app.py](../frontend_streamlit/app.py) | Streamlit | 完整功能：健康检查/注册/登录/会话列表/历史/多会话 |
+| [frontend_streamlit/app.py](../frontend_streamlit/app.py) | Streamlit | 唯一前端：健康检查/注册/登录/会话列表/历史/多会话/求职画像/知识库管理/模式切换 |
 
 ### 5.4 其他
 
@@ -230,9 +229,9 @@ APP_ENV=production docker compose -f docker-compose.production.yml up -d --build
 | `DEFAULT_LLM_MODEL` | 默认模型（qwen-plus） |
 | `POSTGRES_*` | 数据库连接（Docker 内 `POSTGRES_HOST=db`；本地改 `localhost`） |
 | `JWT_SECRET_KEY` / `JWT_ALGORITHM` / `JWT_ACCESS_TOKEN_EXPIRE_DAYS` | JWT 配置 |
-| `ALLOWED_ORIGINS` | CORS 白名单（默认 `http://localhost:3000,http://localhost:8000`） |
+| `ALLOWED_ORIGINS` | CORS 白名单（默认 `http://localhost:8000`，Streamlit 走服务端不受 CORS 限制） |
 | `LONG_TERM_MEMORY_*` | 记忆向量化配置（模型/维度/集合名） |
-| `AMAP_API_KEY` / `AMAP_MCP_ENABLED` | 高德地图 MCP（默认关） |
+| `BAIDU_MAP_MCP_ENABLED` / `BAIDU_MAP_AK` | 百度地图 MCP（自建 FastMCP Server，默认开，AK 未配置自动跳过） |
 | `SESSION_NAMING_ENABLED` | 会话自动命名（默认关） |
 | `RATE_LIMIT_*` | 各接口限流配额 |
 | `LANGFUSE_*` | Langfuse 追踪配置 |
@@ -242,16 +241,15 @@ APP_ENV=production docker compose -f docker-compose.production.yml up -d --build
 ## 8. 注意事项 / 常见坑
 
 1. **登录字段是 `email=`**：旧文档写 `username=` 已过时，后端要求 `email` 字段（见 [auth.py](../app/api/v1/auth.py)），否则 422。
-2. **静态前端 CORS**：`index.html` 不能用 `file://` 双击打开，必须从 `http://localhost:3000` 提供（见 README 前端章节）。
-3. **注册密码**：必须含特殊字符，否则 422（`Password must contain at least one special character`）。
-4. **聊天依赖 DashScope Key**：`DASHSCOPE_API_KEY` 失效则对话报错；同时需要能访问外网/阿里云。
-5. **密钥不入库**：`.env.development` 已被 .gitignore 忽略；但分享目录压缩包前必须脱敏。
-6. **本项目无版本控制**：`.git` 目录为空。建议 `git init` 并提交初始快照，任何删除/修改才有后悔药。
-7. **app 容器显示 unhealthy**：容器内无 curl 导致 Docker 健康检查误报，`/health` 实际正常（镜像未装 curl）。
-8. **多 Python 环境**：机器上存在多个解释器（conda base / ai_agent / Python3.12…），PATH 上的 `python` 未必是你想要的那个 → 命令工具报错或 import 不到包时，用 `python -m <工具>` 或写解释器全路径。
-9. **python -m 是什么**：`python -m xxx` 让解释器运行"它自己环境里"的模块，不依赖 PATH 上的 exe。当包已安装但命令找不到（常见于 `pip install --user` 安装的工具 exe 不在 PATH）时，`-m` 是最稳的调用方式。
-10. **限流**：聊天 30 次/分、登录 20 次/分、注册 10 次/时等；触发返回 429 中文提示。
-11. **数据库迁移**：改模型后需 `alembic revision --autogenerate` + `upgrade head`，Docker 内经 `docker compose exec app` 执行。
+2. **注册密码**：必须含特殊字符，否则 422（`Password must contain at least one special character`）。
+3. **聊天依赖 DashScope Key**：`DASHSCOPE_API_KEY` 失效则对话报错；同时需要能访问外网/阿里云。
+4. **密钥不入库**：`.env.development` 已被 .gitignore 忽略；但分享目录压缩包前必须脱敏。
+5. **本项目无版本控制**：`.git` 目录为空。建议 `git init` 并提交初始快照，任何删除/修改才有后悔药。
+6. **app 容器显示 unhealthy**：容器内无 curl 导致 Docker 健康检查误报，`/health` 实际正常（镜像未装 curl）。
+7. **多 Python 环境**：机器上存在多个解释器（conda base / ai_agent / Python3.12…），PATH 上的 `python` 未必是你想要的那个 → 命令工具报错或 import 不到包时，用 `python -m <工具>` 或写解释器全路径。
+8. **python -m 是什么**：`python -m xxx` 让解释器运行"它自己环境里"的模块，不依赖 PATH 上的 exe。当包已安装但命令找不到（常见于 `pip install --user` 安装的工具 exe 不在 PATH）时，`-m` 是最稳的调用方式。
+9. **限流**：聊天 30 次/分、登录 20 次/分、注册 10 次/时等；触发返回 429 中文提示。
+10. **数据库迁移**：改模型后需 `alembic revision --autogenerate` + `upgrade head`，Docker 内经 `docker compose exec app` 执行。
 
 ---
 

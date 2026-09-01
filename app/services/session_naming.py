@@ -26,14 +26,15 @@ from app.schemas.chat import SessionTitle
 from app.services.database import database_service
 from app.services.llm import llm_service
 
-_PLACEHOLDER_MAX = 40
+_PLACEHOLDER_MAX = 24
 
 _background_tasks: set[asyncio.Task] = set()
 
 
-def _build_placeholder(user_message: str) -> str:
+def build_session_placeholder(user_message: str) -> str:
+    """根据首条提问生成即时可用的会话标题."""
     cleaned = " ".join(user_message.split())
-    return cleaned[:_PLACEHOLDER_MAX].rstrip() or "New chat"
+    return cleaned[:_PLACEHOLDER_MAX].rstrip() or "新聊天"
 
 
 def _claim_session(session_id: str, placeholder: str) -> bool:
@@ -60,9 +61,10 @@ async def _persist_session_name(session_id: str, user_message: str) -> None:
                 SystemMessage(content=SESSION_TITLE_PROMPT),
                 HumanMessage(content=user_message[:500]),
             ],
-            model_name="gpt-5.4-nano",
+            # 注册表里只有 DashScope(qwen) 系列模型；用最便宜的 turbo 生成标题，
+            # 失败时 session 保留上面的占位名
+            model_name="qwen-turbo",
             response_format=SessionTitle,
-            reasoning={"effort": "low"},
             max_tokens=32,
             temperature=0.3,
         )
@@ -85,7 +87,7 @@ def maybe_name_session(session_id: str, session_name: str, messages: list) -> No
     first_user_msg = next((m.content for m in messages if m.role == "user"), None)
     if not first_user_msg:
         return
-    if _claim_session(session_id, _build_placeholder(first_user_msg)):
+    if _claim_session(session_id, build_session_placeholder(first_user_msg)):
         task = asyncio.create_task(_persist_session_name(session_id, first_user_msg))
         _background_tasks.add(task)
         task.add_done_callback(_background_tasks.discard)

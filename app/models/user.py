@@ -7,6 +7,7 @@ from typing import (
 )
 
 import bcrypt
+from sqlalchemy import Column, JSON
 from sqlmodel import (
     Field,
     Relationship,
@@ -27,6 +28,7 @@ class User(BaseModel, table=True):
         email: 用户邮箱。 (unique)
         hashed_password: Bcrypt hashed password
         username: 可选显示名称。 for the user
+        profile: 用户求职画像（JSON，onboarding 表单字段），用于个性化回答
         created_at: 用户创建时间
         sessions: Relationship to user's chat sessions
     """
@@ -35,6 +37,7 @@ class User(BaseModel, table=True):
     email: str = Field(unique=True, index=True)
     hashed_password: str
     username: Optional[str] = Field(default=None, index=False)
+    profile: Optional[dict] = Field(default=None, sa_column=Column(JSON))
     sessions: List["Session"] = Relationship(back_populates="user")
     chat_messages: List["ChatMessage"] = Relationship(back_populates="user")
 

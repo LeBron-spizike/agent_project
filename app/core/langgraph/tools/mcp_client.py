@@ -14,9 +14,9 @@
   - 构建自定义 Agent，不走 LangChain 工具调用链
 
 用法：
-    client = MCPClient("https://mcp.amap.com/mcp?key=YOUR_KEY")
+    client = MCPClient("https://mcp.example.com/mcp?key=YOUR_KEY")
     tools = await client.list_tools()          # 返回 list[mcp.types.Tool]
-    result = await client.call_tool("maps_weather", {"city": "北京"})
+    result = await client.call_tool("tool_name", {"arg": "value"})
 
 说明（MCP 协议强制要求每个 Server 必须实现）：
     session.initialize()   ← 握手，建立连接
@@ -35,7 +35,7 @@
   - 需要同时连接多个 MCP Server，统一管理工具列表
 
 用法：
-    tools = await get_langchain_mcp_tools({"amap": {"url": URL, "transport": "streamable_http"}})
+    tools = await get_langchain_mcp_tools({"weather": {"url": URL, "transport": "streamable_http"}})
     llm_with_tools = llm.bind_tools(tools)    # 绑定给 LLM
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -46,11 +46,11 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
-from typing import Any
+from typing import Any, cast
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from mcp.types import Tool
+from mcp.types import TextContent, Tool
 
 from app.core.logging import logger
 
@@ -70,7 +70,7 @@ class MCPClient:
         """初始化 MCP 客户端.
 
         参数：
-            url: MCP Server 地址，例如 https://mcp.amap.com/mcp?key=YOUR_KEY
+            url: MCP Server 地址，例如 https://mcp.example.com/mcp?key=YOUR_KEY
         """
         self.url = url
 
@@ -104,7 +104,7 @@ class MCPClient:
                 logger.info("mcp_tool_called", tool_name=tool_name, url=self.url)
 
                 # 提取文本内容（MCP 返回的是 content 列表，每项可能是 text/image/resource）
-                contents = [c.text for c in result.content if hasattr(c, "text")]
+                contents = [c.text for c in result.content if isinstance(c, TextContent)]
                 return "\n".join(contents)
 
 
@@ -129,15 +129,16 @@ async def get_langchain_mcp_tools(
                     "transport": "streamable_http",  # 或 "sse"
                 }
             }
-            为 None 时使用内置的高德地图配置（需设置 AMAP_API_KEY 环境变量）。
+            为 None 时使用空配置（调用方需自行传入 servers 字典，
+    项目内置的百度地图 MCP 配置见 app.core.langgraph.tools.baidu_mcp.get_baidu_mcp_servers）。
 
     返回：
         LangChain BaseTool 列表，可直接绑定给 LLM 或 LangGraph Agent。
 
     示例——连接单个 Server：
         tools = await get_langchain_mcp_tools({
-            "amap": {
-                "url": "https://mcp.amap.com/mcp?key=YOUR_KEY",
+            "weather": {
+                "url": "https://mcp.example.com/mcp",
                 "transport": "streamable_http",
             }
         })
@@ -145,14 +146,14 @@ async def get_langchain_mcp_tools(
 
     示例——同时连接多个 Server：
         tools = await get_langchain_mcp_tools({
-            "amap": {"url": "https://mcp.amap.com/mcp?key=KEY", "transport": "streamable_http"},
-            "weather": {"url": "https://mcp.weather.com/mcp", "transport": "streamable_http"},
+            "jobs": {"url": "https://mcp.example.com/jobs", "transport": "streamable_http"},
+            "weather": {"url": "https://mcp.example.com/weather", "transport": "streamable_http"},
         })
     """
     # 延迟导入：langchain-mcp-adapters 是可选依赖，不安装时不影响其他功能
     from langchain_mcp_adapters.client import MultiServerMCPClient  # noqa: PLC0415
 
-    client = MultiServerMCPClient(servers or {})
+    client = MultiServerMCPClient(cast("dict[str, Any]", servers or {}))
     tools = await client.get_tools()
     logger.info(
         "langchain_mcp_tools_loaded",

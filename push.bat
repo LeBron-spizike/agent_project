@@ -4,6 +4,7 @@ REM  一键推送脚本（实时同步 GitHub）
 REM  用法：
 REM    push.bat                -> 自动 add + commit(默认消息) + push
 REM    push.bat "修复登录bug"  -> 指定提交说明
+REM    push.bat --force "说明" -> 强制推送，覆盖远端历史（替换远端项目时用）
 REM  说明：国内网络默认走本地代理 127.0.0.1:7897（Clash 混合端口），
 REM       如无代理可删除下面两行或改成直连。
 REM ============================================================
@@ -11,6 +12,10 @@ setlocal
 set HTTPS_PROXY=http://127.0.0.1:7897
 set HTTP_PROXY=http://127.0.0.1:7897
 cd /d "%~dp0"
+
+set FORCE=
+if /i "%~1"=="--force" set FORCE=--force
+if /i "%~1"=="--force" shift
 
 if "%~1"=="" (
   set MSG=update: auto push %date% %time%
@@ -25,7 +30,7 @@ if errorlevel 1 (
 ) else (
   echo [提交] %MSG%
 )
-git push origin main
+git push origin main %FORCE%
 echo.
 echo ===== 推送完成 =====
 endlocal

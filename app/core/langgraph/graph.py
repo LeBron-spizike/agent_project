@@ -51,10 +51,13 @@ from app.core.logging import logger
 from app.core.metrics import llm_inference_duration_seconds
 from app.core.observability import langfuse_callback_handler
 from app.core.prompts import load_system_prompt
+from app.rag.rag_service import rag_service
 from app.schemas import (
     GraphState,
     Message,
 )
+from app.schemas.profile import UserProfile
+from app.services.database import database_service
 from app.services.llm import llm_service
 from app.services.memory import memory_service
 from app.utils import (
@@ -132,6 +135,28 @@ class LangGraphAgent:
                 raise e
         return self._connection_pool
 
+    async def _retrieve_knowledge(self, query: str) -> tuple[str, list[str]]:
+        """检索 RAG 知识库上下文与来源文件名（inject 模式）.
+
+        非 inject 模式或检索失败时返回 ("", [])；失败降级已由 rag_service.search 内部处理。
+        """
+        if not rag_service.inject_mode_enabled:
+            return "", []
+        return await rag_service.format_context_with_sources(query)
+
+    async def _fetch_profile(self, user_id: Optional[str]) -> str:
+        """获取用户求职画像摘要（无画像 / 失败时返回空串，不阻断对话）."""
+        if not user_id:
+            return ""
+        try:
+            profile = await database_service.get_user_profile(int(user_id))
+            if not profile:
+                return ""
+            return UserProfile(**profile).to_summary()
+        except Exception as e:
+            logger.warning("profile_fetch_failed", user_id=user_id, error=str(e))
+            return ""
+
     async def _chat(self, state: GraphState, config: RunnableConfig) -> Command:
         """处理聊天状态并生成回复.
 
@@ -152,7 +177,13 @@ class LangGraphAgent:
 
         username = config.get("metadata", {}).get("username")
         thread_id = config.get("configurable", {}).get("thread_id")
-        SYSTEM_PROMPT = load_system_prompt(username=username, long_term_memory=state.long_term_memory)
+        SYSTEM_PROMPT = load_system_prompt(
+            username=username,
+            mode=state.mode,
+            long_term_memory=state.long_term_memory,
+            knowledge=state.knowledge,
+            profile=state.profile,
+        )
 
         # 使用系统提示词准备消息
         messages = prepare_messages(state.messages, SYSTEM_PROMPT)
@@ -294,7 +325,8 @@ class LangGraphAgent:
         session_id: str,
         user_id: Optional[str] = None,
         username: Optional[str] = None,
-    ) -> list[Message]:
+        mode: str = "career",
+    ) -> tuple[list[Message], list[str]]:
         """从 LLM 获取回复.
 
         参数：
@@ -302,9 +334,11 @@ class LangGraphAgent:
             session_id (str): 当前对话的 session ID。
             user_id (Optional[str]): 当前对话的用户 ID。
             username (Optional[str]): 用户展示名称。
+            mode (str): 人设模式（career/resume/interview），覆盖会话内旧模式实现切换。
 
         返回：
-            list[Message]: LLM 返回的响应消息。
+            tuple[list[Message], list[str]]: 响应消息列表，以及本轮命中的知识库来源文件名
+            （inject 模式且检索命中时非空，供接口层随响应返回、前端展示"知识库来源"）。
         """
         graph = await self._get_graph()
         callbacks: list[BaseCallbackHandler] = [langfuse_callback_handler] if settings.LANGFUSE_TRACING_ENABLED else []
@@ -323,16 +357,19 @@ class LangGraphAgent:
         }
 
         try:
-            # 并发获取 graph 状态和长期记忆，避免串行等待节省 200-500ms
-            state, relevant_memory = await asyncio.gather(
+            # 并发获取 graph 状态、长期记忆、知识库上下文与用户画像，避免串行等待
+            state, relevant_memory, (knowledge_context, knowledge_sources_input), profile = await asyncio.gather(
                 graph.aget_state(config),
                 memory_service.search(user_id, messages[-1].content),
+                self._retrieve_knowledge(messages[-1].content),
+                self._fetch_profile(user_id),
             )
 
             if state.next:
                 # state.next 非空说明上次执行被 interrupt（如 ask_human 工具），
                 # 此次用用户输入作为 resume 值继续执行，而不是重新开始
                 logger.info("继续执行被中断的图流程", session_id=session_id, next_nodes=state.next)
+                knowledge_sources: list[str] = []
                 response = await graph.ainvoke(
                     Command(resume=messages[-1].content),
                     config=config,
@@ -340,26 +377,34 @@ class LangGraphAgent:
             else:
                 relevant_memory = relevant_memory or "No relevant memory found."
                 response = await graph.ainvoke(
-                    input={"messages": dump_messages(messages), "long_term_memory": relevant_memory},
+                    input={
+                        "messages": dump_messages(messages),
+                        "long_term_memory": relevant_memory,
+                        "knowledge": knowledge_context,
+                        "knowledge_sources": knowledge_sources_input,
+                        "profile": profile,
+                        "mode": mode,
+                    },
                     config=config,
                 )
+                knowledge_sources = knowledge_sources_input
 
             # ainvoke 返回后再检查一次状态：图在本次执行中可能又遇到了 interrupt
             state = await graph.aget_state(config)
             if state.next:
                 interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
                 logger.info("图流程已中断等待用户输入", session_id=session_id, interrupt_value=str(interrupt_value))
-                return [Message(role="assistant", content=str(interrupt_value))]
+                return [Message(role="assistant", content=str(interrupt_value))], knowledge_sources
 
             openai_msgs = cast(list[dict], convert_to_openai_messages(response["messages"]))
             # 记忆写入不阻塞响应返回，后台异步执行
             asyncio.create_task(memory_service.add(user_id, openai_msgs, config.get("metadata")))
-            return self.__process_messages(response["messages"])
+            return self.__process_messages(response["messages"]), knowledge_sources
         except GraphInterrupt:
             state = await graph.aget_state(config)
             interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
             logger.info("图流程已中断等待用户输入", session_id=session_id, interrupt_value=str(interrupt_value))
-            return [Message(role="assistant", content=str(interrupt_value))]
+            return [Message(role="assistant", content=str(interrupt_value))], []
         except GraphRecursionError:
             logger.warning(
                 "graph_recursion_limit_exceeded",
@@ -369,7 +414,7 @@ class LangGraphAgent:
             return [Message(
                 role="assistant",
                 content="抱歉，这个问题需要的处理步骤过多，我无法完成。请尝试拆分问题或换一种方式提问。",
-            )]
+            )], []
         except Exception as e:
             logger.exception("get_response_failed", error=str(e), session_id=session_id)
             raise
@@ -380,7 +425,8 @@ class LangGraphAgent:
         session_id: str,
         user_id: Optional[str] = None,
         username: Optional[str] = None,
-    ) -> AsyncGenerator[str, None]:
+        mode: str = "career",
+    ) -> AsyncGenerator[tuple[str, list[str]], None]:
         """从 LLM 获取流式回复.
 
         参数：
@@ -388,9 +434,11 @@ class LangGraphAgent:
             session_id (str): 当前对话的 session ID。
             user_id (Optional[str]): 当前对话的用户 ID。
             username (Optional[str]): 用户展示名称。
+            mode (str): 人设模式（career/resume/interview），覆盖会话内旧模式实现切换。
 
         产出：
-            str: LLM 响应中的 token。
+            tuple[str, list[str]]: 每个文本分片，以及本轮命中的知识库来源文件名
+            （inject 模式且检索命中时非空，供接口层随结束事件返回、前端展示"知识库来源"）。
         """
         callbacks: list[BaseCallbackHandler] = [langfuse_callback_handler] if settings.LANGFUSE_TRACING_ENABLED else []
         config: RunnableConfig = {
@@ -408,10 +456,12 @@ class LangGraphAgent:
         graph = await self._get_graph()
 
         try:
-            # 并发检查状态和检索记忆，节省 200-500ms
-            state, relevant_memory = await asyncio.gather(
+            # 并发检查状态、检索记忆、知识库上下文与用户画像，节省等待时间
+            state, relevant_memory, (knowledge_context, knowledge_sources), profile = await asyncio.gather(
                 graph.aget_state(config),
                 memory_service.search(user_id, messages[-1].content),
+                self._retrieve_knowledge(messages[-1].content),
+                self._fetch_profile(user_id),
             )
 
             if state.next:
@@ -419,7 +469,14 @@ class LangGraphAgent:
                 graph_input = Command(resume=messages[-1].content)
             else:
                 relevant_memory = relevant_memory or "No relevant memory found."
-                graph_input = {"messages": dump_messages(messages), "long_term_memory": relevant_memory}
+                graph_input = {
+                    "messages": dump_messages(messages),
+                    "long_term_memory": relevant_memory,
+                    "knowledge": knowledge_context,
+                    "knowledge_sources": knowledge_sources,
+                    "profile": profile,
+                    "mode": mode,
+                }
 
             async for token, _ in graph.astream(
                 graph_input,
@@ -432,14 +489,14 @@ class LangGraphAgent:
 
                 text = extract_text_content(token.content)
                 if text:
-                    yield text
+                    yield text, knowledge_sources
 
             # 流式结束后检查是否触发了 interrupt（如 ask_human），有则把 interrupt 值作为最后一条消息推送
             state = await graph.aget_state(config)
             if state.next:
                 interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
                 logger.info("流式图流程已中断等待用户输入", session_id=session_id, interrupt_value=str(interrupt_value))
-                yield str(interrupt_value)
+                yield str(interrupt_value), []
             elif state.values and "messages" in state.values:
                 openai_msgs = cast(list[dict], convert_to_openai_messages(state.values["messages"]))
                 # 记忆写入放后台，不阻塞流式响应的关闭
@@ -448,14 +505,14 @@ class LangGraphAgent:
             state = await graph.aget_state(config)
             interrupt_value = state.tasks[0].interrupts[0].value if state.tasks else "Waiting for input."
             logger.info("流式图流程已中断等待用户输入", session_id=session_id, interrupt_value=str(interrupt_value))
-            yield str(interrupt_value)
+            yield str(interrupt_value), []
         except GraphRecursionError:
             logger.warning(
                 "graph_recursion_limit_exceeded",
                 session_id=session_id,
                 recursion_limit=settings.LANGGRAPH_RECURSION_LIMIT,
             )
-            yield "抱歉，这个问题需要的处理步骤过多，我无法完成。请尝试拆分问题或换一种方式提问。"
+            yield "抱歉，这个问题需要的处理步骤过多，我无法完成。请尝试拆分问题或换一种方式提问。", []
         except Exception as stream_error:
             logger.exception("stream_processing_failed", error=str(stream_error), session_id=session_id)
             raise stream_error
