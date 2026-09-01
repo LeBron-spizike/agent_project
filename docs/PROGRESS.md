@@ -49,6 +49,11 @@
   - 产品场景：offer 通勤对比、面试地点路线、简历地址解析等，结合 RAG 知识库给出建议
   - 测试重写：`test_mcp_client.py`（配置结构）、`test_mcp_with_llm.py`（LLM ReAct 天气/周边/路线，AK 缺失自动跳过）
   - 镜像顺带补装 curl（修复 healthcheck 因缺 curl 永远 unhealthy 的老问题）
+- [x] **仓库整理与发布（2026-09-01）**：
+  - 删除 unused 的 `daily-report` 技能（`.claude/skills/daily-report/` + settings.local.json 白名单行 + project-overview.md 提及），保留 frontend-design / webapp-testing
+  - 新增 [docs/from-template.md](from-template.md)：基于 wassim249/fastapi-langgraph-agent-production-ready-template 的复现步骤 + Agent 系统架构 + 相对模板新增功能矩阵；README 致谢/文档索引同步，并修正两处过时注意事项（git 版本控制、unhealthy-curl）
+  - `push.sh` / `push.bat` 增加 `--force` 选项（覆盖远端历史用）
+  - 提交 `d3f623a` 并推送至 **github.com/LeBron-spizike/agent_project**（fast-forward 更新，远端 main 已确认指向 d3f623a）
 - [x] **改名**：`fastapi-langgraph-agent-zh` → `Employment_Planning_Agent`（pyproject / config / env / README / docs / docker / 脚本 / 前端，全量替换；技术栈仅保留在文档）
 - [x] **后端产品化**：系统提示词改为「就业规划专家」（中文角色 + 分点回答 + 长期记忆个性化）；`SessionResponse` 增加 `created_at`（前端会话分组用）
 - [x] **后端健壮性**：`app/utils/graph.py` 的 tiktoken 计数增加离线估算兜底（容器无外网时不再启动崩溃）
